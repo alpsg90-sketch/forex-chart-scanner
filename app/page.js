@@ -1,24 +1,28 @@
 "use client";
 import {useEffect,useMemo,useState} from "react";
-
 export default function Home(){
-  const[tf,setTf]=useState("All"),[q,setQ]=useState(""),[rows,setRows]=useState([]),[loading,setLoading]=useState(true),[backtest,setBacktest]=useState(null);
-
-  async function load(){
-    setLoading(true);
-    try{const d=await (await fetch("/api/scan",{cache:"no-store"})).json();setRows(d.results||[])}finally{setLoading(false)}
-  }
-  async function loadBacktest(){setBacktest(await (await fetch("/api/backtest",{cache:"no-store"})).json())}
-  useEffect(()=>{load();loadBacktest()},[]);
-  const filtered=useMemo(()=>rows.filter(r=>(tf==="All"||r.tf===tf)&&r.pair.toLowerCase().includes(q.toLowerCase())),[rows,tf,q]);
-
-  return <main className="shell">
-    <header><div className="eyebrow">MARKET INTELLIGENCE</div><h1>Forex Chart Scanner</h1><p>Rule-based analysis for forex and gold markets.</p></header>
-    <section className="hero"><div><div className="eyebrow">V3 SCANNER ENGINE</div><h2>Trend + momentum + volatility + structure.</h2><p>EMA 20/50, RSI 14, ATR 14, breakout structure and a transparent setup score.</p></div><button onClick={load}>Refresh scan</button></section>
-    <section className="controls"><input placeholder="Search pair..." value={q} onChange={e=>setQ(e.target.value)}/><div className="tabs">{["All","5M","15M","1H","4H","1D"].map(x=><button className={tf===x?"active":""} key={x} onClick={()=>setTf(x)}>{x}</button>)}</div></section>
-    <section className="stats"><div><span>Pairs scanned</span><strong>{filtered.length}</strong></div><div><span>Buy setups</span><strong>{filtered.filter(x=>x.signal==="BUY").length}</strong></div><div><span>Sell setups</span><strong>{filtered.filter(x=>x.signal==="SELL").length}</strong></div><div><span>Neutral</span><strong>{filtered.filter(x=>x.signal==="NEUTRAL").length}</strong></div></section>
-    <section className="panel"><div className="panelhead"><h3>Scanner results</h3><p>{loading?"Calculating...":"Live adapter ready; sample data is used until provider credentials are configured."}</p></div><div className="table"><div className="tr th"><span>Pair</span><span>TF</span><span>Trend</span><span>RSI</span><span>Setup</span><span>Signal</span><span>Score</span></div>{filtered.map(r=><div className="tr" key={r.pair+r.tf}><span className="pair">{r.pair}</span><span>{r.tf}</span><span>{r.trend}</span><span>{r.rsi}</span><span>{r.setup}</span><span className={"signal "+r.signal.toLowerCase()}>{r.signal}</span><span>{r.score}/100</span></div>)}</div></section>
-    <section className="panel backtest"><div className="panelhead"><h3>Strategy backtest</h3><p>Illustrative sample-candle test only. It is not evidence of future performance.</p></div>{backtest&&<div className="backgrid">{backtest.results.map(r=><div className="bt" key={r.pair}><strong>{r.pair}</strong><span>Trades: {r.tradeCount}</span><span>Win rate: {r.winRate}%</span><span>Sample return: {r.totalReturn}%</span></div>)}</div>}</section>
-    <footer>Scores and backtests are analytical tools, not guarantees. Use historical/paper testing before considering real-money trading.</footer>
-  </main>
+ const[tf,setTf]=useState("All"),[q,setQ]=useState(""),[rows,setRows]=useState([]),[loading,setLoading]=useState(true),[backtest,setBacktest]=useState(null);
+ const[tradePair,setTradePair]=useState("EUR/USD"),[tradeSide,setTradeSide]=useState("BUY"),[entry,setEntry]=useState("");
+ async function load(){setLoading(true);try{const d=await(await fetch("/api/scan",{cache:"no-store"})).json();setRows(d.results||[])}finally{setLoading(false)}}
+ async function loadBacktest(){setBacktest(await(await fetch("/api/backtest",{cache:"no-store"})).json())}
+ useEffect(()=>{load();loadBacktest()},[]);
+ const filtered=useMemo(()=>rows.filter(r=>(tf==="All"||r.tf===tf)&&r.pair.toLowerCase().includes(q.toLowerCase())),[rows,tf,q]);
+ const managed=rows.find(r=>r.pair===tradePair), price=managed?.currentPrice, e=Number(entry), risk=managed?.atr*1.2;
+ const stop=tradeSide==="BUY"?e-risk:e+risk, target=tradeSide==="BUY"?e+risk*1.5:e-risk*1.5;
+ let advice="Enter your actual entry price to check the position.",tone="neutral";
+ if(entry.trim()&&Number.isFinite(e)&&e>0&&Number.isFinite(price)){
+  if((tradeSide==="BUY"&&price<=stop)||(tradeSide==="SELL"&&price>=stop)){advice="CLOSE — stop-loss level reached.";tone="sell"}
+  else if((tradeSide==="BUY"&&price>=target)||(tradeSide==="SELL"&&price<=target)){advice="CLOSE — take-profit level reached.";tone="buy"}
+  else if(managed?.signal===(tradeSide==="BUY"?"SELL":"BUY")&&managed.score>=68){advice="CAUTION — scanner signals the opposite direction. Review/consider closing.";tone="sell"}
+  else{advice="HOLD only while your setup remains valid. Recheck each candle; time is not a guaranteed deadline.";tone="buy"}
+ }
+ return <main className="shell">
+ <header><div className="eyebrow">MARKET INTELLIGENCE</div><h1>Forex Chart Scanner</h1><p>Short-term screening with entry ideas and trade-management levels.</p></header>
+ <section className="hero"><div><div className="eyebrow">SCANNER + TRADE PLAN</div><h2>Trend, momentum, volatility and structure.</h2><p>EMA 20/50, RSI 14, ATR 14 and recent breakout structure. ATR stop/target levels are estimates, not guarantees.</p></div><button onClick={load}>Refresh scan</button></section>
+ <section className="controls"><input placeholder="Search pair..." value={q} onChange={e=>setQ(e.target.value)}/><div className="tabs">{["All","5M","15M","1H","4H","1D"].map(x=><button className={tf===x?"active":""} key={x} onClick={()=>setTf(x)}>{x}</button>)}</div></section>
+ <section className="stats"><div><span>Pairs scanned</span><strong>{filtered.length}</strong></div><div><span>Buy setups</span><strong>{filtered.filter(x=>x.signal==="BUY").length}</strong></div><div><span>Sell setups</span><strong>{filtered.filter(x=>x.signal==="SELL").length}</strong></div><div><span>Neutral / wait</span><strong>{filtered.filter(x=>x.signal==="NEUTRAL").length}</strong></div></section>
+ <section className="panel"><div className="panelhead"><h3>Scanner results</h3><p>{loading?"Calculating...":rows.some(r=>r.source==="live")?"Live candles connected.":"Sample data only — connect a market-data API before relying on signals."}</p></div><div className="table"><div className="tr th"><span>Pair</span><span>TF</span><span>Trend</span><span>RSI</span><span>Signal / score</span><span>Entry idea</span><span>SL / TP</span><span>Hold guide</span></div>{filtered.map(r=><div className="tr" key={r.pair+r.tf}><span className="pair">{r.pair}</span><span>{r.tf}</span><span>{r.trend}</span><span>{r.rsi}</span><span className={"signal "+r.signal.toLowerCase()}>{r.signal} · {r.score}/100</span><span>{r.tradePlan?r.tradePlan.entry:"Wait"}</span><span>{r.tradePlan?r.tradePlan.stopLoss+" / "+r.tradePlan.takeProfit:"—"}</span><span>{r.holdEstimate}</span></div>)}</div></section>
+ <section className="panel backtest"><div className="panelhead"><h3>Open-trade check</h3><p>Enter a position you opened. The scanner compares its latest price with indicative ATR stop/target levels. It cannot see your broker account.</p></div><div className="controls"><select value={tradePair} onChange={e=>setTradePair(e.target.value)}>{rows.map(r=><option key={r.pair} value={r.pair}>{r.pair} ({r.tf})</option>)}</select><select value={tradeSide} onChange={e=>setTradeSide(e.target.value)}><option value="BUY">My trade: BUY</option><option value="SELL">My trade: SELL</option></select><input type="number" step="any" placeholder="My entry price" value={entry} onChange={e=>setEntry(e.target.value)}/></div><div className="panelhead"><h3 className={"signal "+tone}>{advice}</h3><p>{managed&&Number.isFinite(price)?"Latest scanned price: "+price+". Indicative stop: "+(Number.isFinite(stop)?stop.toFixed(5):"—")+" · target: "+(Number.isFinite(target)?target.toFixed(5):"—")+".":"No price available."}</p></div></section>
+ <section className="panel backtest"><div className="panelhead"><h3>Strategy backtest</h3><p>Illustrative sample-candle test only; not proof of future performance.</p></div>{backtest&&<div className="backgrid">{backtest.results.map(r=><div className="bt" key={r.pair}><strong>{r.pair}</strong><span>Trades: {r.tradeCount}</span><span>Win rate: {r.winRate}%</span><span>Sample return: {r.totalReturn}%</span></div>)}</div>}</section>
+ <footer>Educational analytics only. No trades are placed. Verify live quotes, spread, sizing and risk; never use sample prices for live decisions.</footer></main>
 }
